@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Seed demo database
+        run: python src/seed.py
+      - name: Run test suite
+        run: python -m pytest tests/ -q
+
+  security-invariants:
+    # The permission model is treated as a build-breaking property. These four
+    # tests encode what the gateway is guaranteed NOT to do; if any of them fails
+    # the build fails, regardless of whether the rest of the suite passes.
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Seed demo database
+        run: python src/seed.py
+      - name: Enforce security invariants
+        run: |
+          python -m pytest tests/ -q -k "readonly_agent_cannot_write or \
+            privileged_action_does_not_execute_on_call or \
+            never_exposed_tools_are_unreachable or \
+            agent_cannot_approve_its_own_request or \
+            audit_redacts_secrets or \
+            stored_prompt_injection_is_neutralized" -v
+      - name: End-to-end demo
+        run: python demo.py
