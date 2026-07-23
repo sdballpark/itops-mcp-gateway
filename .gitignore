@@ -6,3 +6,5 @@ venv/
 data/*.db
 *.log
 .DS_Store
+
+DEMO_RUNBOOK.md
