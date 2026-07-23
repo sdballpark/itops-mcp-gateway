@@ -1,3 +1,5 @@
+[![CI](https://github.com/sdballpark/itops-mcp-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/sdballpark/itops-mcp-gateway/actions/workflows/ci.yml)
+
 # IT Operations MCP Gateway
 
 A Model Context Protocol server that lets AI agents work with IT service management
