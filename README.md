@@ -230,4 +230,15 @@ Synthetic data, single node, no production traffic. It demonstrates a security
 architecture for agent-to-enterprise integration; it is not evidence of having run
 one at scale. `docs/DESIGN_NOTES.md` covers what would change under real load.
 
+
+---
+
+## Author
+
+**Robert Bogan**
+
+AI Security & Governance Engineer | CISSP, CISM, CRISC
+
+[LinkedIn](https://www.linkedin.com/in/robert-l-bogan-jr)
+
 MIT licensed.
