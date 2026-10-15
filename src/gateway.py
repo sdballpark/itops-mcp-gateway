@@ -407,7 +407,8 @@ class Gateway:
             self.audit.record(client_id, role_name, tool_name, spec.tier, Decision.ALLOW,
                               arguments, reason=f"error: {type(exc).__name__}",
                               duration_ms=(time.perf_counter() - started) * 1000)
-            return {"ok": False, "error": "execution_failed", "reason": str(exc)}
+            return {"ok": False, "error": "execution_failed",
+                    "reason": "internal error; error type recorded in the audit log"}
 
         # 6. audit
         elapsed = (time.perf_counter() - started) * 1000
