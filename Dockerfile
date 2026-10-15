@@ -1,6 +1,12 @@
 # Multi-stage-free but deliberately minimal: no build toolchain in the runtime image.
 FROM python:3.12-slim
 
+# Apply Debian security updates at build time. The official image can lag behind
+# published fixes, so patch the OS layer before adding anything else.
+RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
+ && rm -rf /var/lib/apt/lists/*
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
