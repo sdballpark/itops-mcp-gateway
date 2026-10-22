@@ -237,7 +237,7 @@ one at scale. `docs/DESIGN_NOTES.md` covers what would change under real load.
 
 **Robert Bogan**
 
-AI Security & Governance Engineer | CISSP, CISM, CRISC
+AI Security Architect | CISSP, CISM, CRISC
 
 [LinkedIn](https://www.linkedin.com/in/robert-l-bogan-jr)
 
