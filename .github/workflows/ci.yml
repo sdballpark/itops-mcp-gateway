@@ -47,6 +47,8 @@ jobs:
             privileged_action_does_not_execute_on_call or \
             never_exposed_tools_are_unreachable or \
             agent_cannot_approve_its_own_request or \
+            agent_credential_cannot_approve or \
+            role_header_is_ignored or \
             audit_redacts_secrets or \
             stored_prompt_injection_is_neutralized" -v
       - name: End-to-end demo

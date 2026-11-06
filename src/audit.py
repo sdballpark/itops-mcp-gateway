@@ -3,7 +3,7 @@ Audit log and approval queue.
 
 THE AUDIT LOG
 -------------
-Append only. There is no UPDATE or DELETE path anywhere in this codebase, and
+Append only. No code path issues UPDATE or DELETE against the audit_log table, and
 'modify_audit_log' appears in NEVER_EXPOSED so no tool can reach it either.
 
 Every tool invocation is logged whether it succeeded, was denied, or errored.

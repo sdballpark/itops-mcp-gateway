@@ -10,6 +10,10 @@ Two reasons this exists alongside the MCP server:
   2. It makes the gateway demonstrable without an MCP client attached. Open /docs
      and every tool is callable from a browser.
 
+Identity on this transport comes from operator-issued credentials (credentials.py),
+never from a header or body field the caller fills in. Agents and approvers hold keys
+from separate namespaces, so an agent's key cannot approve anything.
+
 It shares gateway.py with the MCP server, so the permission model cannot drift
 between the two transports. That is the single most important property of this file:
 the most common way a gateway like this fails is someone adding an HTTP admin path
@@ -30,12 +34,14 @@ from fastapi import FastAPI, Header, HTTPException  # noqa: E402
 from pydantic import BaseModel, Field  # noqa: E402
 
 from backends import SQLiteBackend  # noqa: E402
+from credentials import CREDENTIALS_PATH, CredentialStore  # noqa: E402
 from gateway import Gateway  # noqa: E402
 from security import NEVER_EXPOSED, ROLES  # noqa: E402
 
 DB_PATH = os.environ.get("ITOPS_DB", "data/itops.db")
 
-_state: dict[str, Any] = {"gateway": None, "ready": False, "error": None}
+_state: dict[str, Any] = {"gateway": None, "ready": False, "error": None,
+                          "credentials": CredentialStore({}, {})}
 
 
 @asynccontextmanager
@@ -45,6 +51,8 @@ async def lifespan(_app: "FastAPI"):
         if not Path(DB_PATH).exists():
             raise FileNotFoundError(f"{DB_PATH} not found. Run `python src/seed.py` first.")
         _state["gateway"] = Gateway(SQLiteBackend(DB_PATH), DB_PATH)
+        _state["credentials"] = CredentialStore.load(
+            os.environ.get("ITOPS_CREDENTIALS", CREDENTIALS_PATH))
         _state["ready"] = True
     except Exception as exc:  # noqa: BLE001
         _state["ready"] = False
@@ -81,7 +89,8 @@ class ToolCall(BaseModel):
 
 
 class ApprovalDecision(BaseModel):
-    approver: str = Field(..., description="Human approver identity, e.g. dwayne.rhule")
+    # No approver field. The approver's identity comes from their credential, so a
+    # caller cannot type someone else's name into the audit trail.
     approved: bool = True
 
 
@@ -127,9 +136,11 @@ def roles() -> dict[str, Any]:
 
 
 @app.get("/tools", tags=["tools"])
-def list_tools(x_client_role: str = Header(default="readonly_agent")) -> dict[str, Any]:
-    """Tools visible to the given role. Pass X-Client-Role to compare."""
-    role = x_client_role if x_client_role in ROLES else "readonly_agent"
+def list_tools(role: str = "readonly_agent") -> dict[str, Any]:
+    """Tools visible to a role. Discovery only, like /roles: choosing a role here
+    shows the permission model and grants nothing. /call takes its role from the
+    caller's credential."""
+    role = role if role in ROLES else "readonly_agent"
     tools = gw().list_tools(role)
     return {"role": role, "count": len(tools), "tools": tools}
 
@@ -141,17 +152,21 @@ def list_tools(x_client_role: str = Header(default="readonly_agent")) -> dict[st
 @app.post("/call", tags=["tools"])
 def call(
     body: ToolCall,
-    x_client_role: str = Header(default="readonly_agent"),
-    x_client_id: str = Header(default="http-client"),
+    authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
     """Invoke a tool.
 
-    The role arrives as a header rather than in the request body, mirroring how a
-    deployment supplies it as configuration rather than letting the caller choose.
-    An unrecognised role fails closed to readonly_agent.
+    The role comes from the agent credential in the Authorization header. A missing or
+    unrecognised credential fails closed to readonly_agent, the same default an
+    unrecognised role gets on the MCP transport.
     """
-    role = x_client_role if x_client_role in ROLES else "readonly_agent"
-    return gw().call_tool(body.tool, body.arguments, client_id=x_client_id, role_name=role)
+    g = gw()
+    ident = _state["credentials"].agent(authorization)
+    if ident is None or ident.role not in ROLES:
+        return g.call_tool(body.tool, body.arguments, client_id="anonymous",
+                           role_name="readonly_agent")
+    return g.call_tool(body.tool, body.arguments, client_id=ident.client_id,
+                       role_name=ident.role)
 
 
 # --------------------------------------------------------------------------
@@ -173,13 +188,31 @@ def get_approval(approval_id: str) -> dict[str, Any]:
 
 
 @app.post("/approvals/{approval_id}/decide", tags=["approvals"])
-def decide(approval_id: str, body: ApprovalDecision) -> dict[str, Any]:
+def decide(
+    approval_id: str,
+    body: ApprovalDecision,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
     """Approve or deny a queued privileged action.
 
-    On approval the action executes here, not in the agent's session. The approver
-    identity is recorded in the audit trail alongside the original request.
+    Requires an approver credential. Agent credentials live in a separate namespace
+    and are rejected here. On approval the action executes here, not in the agent's
+    session, and the approver identity from the credential is recorded in the audit
+    trail alongside the original request.
     """
-    result = gw().approve(approval_id, body.approver, body.approved)
+    g = gw()
+    creds: CredentialStore = _state["credentials"]
+    if not creds.has_approvers:
+        raise HTTPException(status_code=503, detail="no approvers configured")
+    approver = creds.approver(authorization)
+    if approver is None:
+        raise HTTPException(status_code=401, detail="approver credential required")
+    rec = g.approvals.get(approval_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"unknown approval_id: {approval_id}")
+    if approver == rec.get("requested_by"):
+        raise HTTPException(status_code=403, detail="requester cannot approve own request")
+    result = g.approve(approval_id, approver, body.approved)
     if not result.get("ok"):
         raise HTTPException(status_code=400, detail=result.get("error", "decision failed"))
     return result

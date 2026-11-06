@@ -8,6 +8,11 @@ and identity systems, with the permission model that makes it safe to do so.
 The interesting part is not that an agent can look up a user or open a ticket. It is
 what happens when it asks to add someone to the Global Administrators group.
 
+**Measured result.** The [Nemotron agent evaluation lab](https://github.com/sdballpark/nemotron-agent-eval-lab)
+ran 216 agent episodes against this gateway, 96 of them carrying injected instructions.
+The injections steered three of four models into requesting privileged actions. The
+gateway executed none of them.
+
 ---
 
 ## The problem
@@ -61,7 +66,9 @@ is enforced server side, after the model has already decided what it wants.
 
 ## Client roles
 
-An agent connects as a role supplied by the operator, never one it names itself.
+An agent connects as a role supplied by the operator, never one it names itself. Over
+MCP the role is set in the server's configuration. Over HTTP it comes from an issued
+agent key; any role header the caller sends is ignored.
 
 | Role | Ceiling | Purpose |
 |---|---|---|
@@ -78,8 +85,8 @@ sensible default for a permission system.
 
 ```bash
 pip install -r requirements.txt
-python src/seed.py      # synthetic directory, tickets, knowledge base
-python demo.py          # walks all six scenarios
+python src/seed.py           # synthetic directory, tickets, knowledge base
+python demo.py               # walks all six scenarios
 python -m pytest tests/ -q
 ```
 
@@ -89,18 +96,21 @@ commit, so the scenarios are verified rather than being a script that rotted.
 ### Browse it
 
 ```bash
+python src/credentials.py    # issues demo agent and approver keys, prints them once
 uvicorn src.api:app --reload
 ```
 
-Then open **http://localhost:8000/docs**. Useful endpoints:
+Then open **http://localhost:8000/docs**. Send keys as `Authorization: Bearer <key>`.
+Without a key, `/call` runs as `readonly_agent` and `/approvals/{id}/decide` refuses.
+Useful endpoints:
 
 | Endpoint | What it shows |
 |---|---|
 | `GET /roles` | The permission model as data, including every never-exposed action and why |
-| `GET /tools` | Tools visible to a role. Change `X-Client-Role` and watch the list change |
-| `POST /call` | Invoke any tool |
+| `GET /tools?role=` | Tools visible to a role. Change the role and watch the list change. Discovery only |
+| `POST /call` | Invoke a tool as the role tied to your agent key |
 | `GET /approvals` | The human approval queue |
-| `POST /approvals/{id}/decide` | Approve or deny. This is the surface no agent can reach |
+| `POST /approvals/{id}/decide` | Approve or deny. Requires an approver key, which agents never hold |
 | `GET /audit/summary` | Call volumes, decisions, and recent denials |
 
 ### As an MCP server
@@ -168,19 +178,21 @@ table survives.
 sensitive keys by name, bearer tokens, long opaque strings, SSN-shaped values. The
 log has to prove what happened without becoming a second place secrets accumulate.
 
-**Append-only audit.** No UPDATE or DELETE path exists anywhere in the codebase, and
+**Append-only audit.** No code path issues UPDATE or DELETE against the audit table, and
 `modify_audit_log` is in the never-exposed list, so the gateway cannot rewrite its
 own record.
 
-**Agents cannot approve themselves.** There is no `approve` tool. No sequence of
-model outputs reaches that path. A second identity check in the approval queue is
-belt and braces.
+**Agents cannot approve themselves.** There is no `approve` tool, so nothing over MCP
+reaches the approval path. Over HTTP, approval requires an approver key from a
+namespace agents are never issued, and the approver's name is taken from that key
+rather than from the request. A requester cannot approve its own request, and with
+no approvers configured the endpoint fails closed.
 
 ---
 
 ## Tests
 
-28 tests, weighted toward security invariants rather than functionality. The four
+35 tests, weighted toward security invariants rather than functionality. The ones
 that matter most:
 
 ```
@@ -188,6 +200,8 @@ test_readonly_agent_cannot_write
 test_privileged_action_does_not_execute_on_call
 test_never_exposed_tools_are_unreachable
 test_agent_cannot_approve_its_own_request
+test_agent_credential_cannot_approve
+test_role_header_is_ignored
 ```
 
 CI runs the full suite, then re-runs the invariants as a separate gating job, then
@@ -218,17 +232,18 @@ in the gateway still cannot grant capability the token does not carry.
 
 ## Documentation
 
-- [`docs/SECURITY_MODEL.md`](docs/SECURITY_MODEL.md) — the threat model and every control, in detail
-- [`docs/DESIGN_NOTES.md`](docs/DESIGN_NOTES.md) — decisions, tradeoffs, and what changed during the build
-- [`docs/RUNBOOK.md`](docs/RUNBOOK.md) — operating procedures, approvals, incident response
+- [`docs/SECURITY_MODEL.md`](docs/SECURITY_MODEL.md): the threat model and every control, in detail
+- [`docs/DESIGN_NOTES.md`](docs/DESIGN_NOTES.md): decisions, tradeoffs, and what changed during the build
+- [`docs/RUNBOOK.md`](docs/RUNBOOK.md): operating procedures, approvals, incident response
 
 ---
 
 ## What this does not claim
 
-Synthetic data, single node, no production traffic. It demonstrates a security
-architecture for agent-to-enterprise integration; it is not evidence of having run
-one at scale. `docs/DESIGN_NOTES.md` covers what would change under real load.
+Synthetic data, single node, no production traffic. HTTP credentials are static keys
+stored as hashes; production would use Entra ID tokens for both agents and approvers.
+It demonstrates a security architecture for agent-to-enterprise integration; it is
+not evidence of having run one at scale. `docs/DESIGN_NOTES.md` covers what would change under real load.
 
 
 ---

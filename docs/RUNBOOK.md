@@ -46,9 +46,9 @@ Set the role in the MCP client configuration, never in the agent's own context:
 
 Choosing a role:
 
-- **`readonly_agent`** — start here. Covers question answering and triage assistance.
-- **`servicedesk_agent`** — when the agent should open and update tickets.
-- **`access_request_agent`** — only when someone is available to work the approval
+- **`readonly_agent`**: start here. Covers question answering and triage assistance.
+- **`servicedesk_agent`**: when the agent should open and update tickets.
+- **`access_request_agent`**: only when someone is available to work the approval
   queue. This role generates human work by design.
 
 An unrecognised role fails closed to `readonly_agent` and logs a warning to stderr.
@@ -63,24 +63,27 @@ curl -s localhost:8000/approvals
 
 For each pending request, check:
 
-1. **Justification** — does it name a business reason, not just a restatement?
-2. **Target user** — is the account active? Is MFA enrolled?
-3. **Group** — is it privileged? PHI Data Access and Global Administrators always
+1. **Justification**: does it name a business reason, not just a restatement?
+2. **Target user**: is the account active? Is MFA enrolled?
+3. **Group**: is it privileged? PHI Data Access and Global Administrators always
    warrant a second look.
-4. **Requesting agent** — does this agent normally make requests like this?
+4. **Requesting agent**: does this agent normally make requests like this?
 
 Approve:
 
 ```bash
 curl -s -X POST localhost:8000/approvals/APR-xxxx/decide \
+  -H "Authorization: Bearer $APPROVER_KEY" \
   -H 'Content-Type: application/json' \
-  -d '{"approver":"your.name","approved":true}'
+  -d '{"approved":true}'
 ```
 
-Deny by setting `"approved": false`. Both outcomes are audited with your identity.
+Deny by setting `"approved": false`. Both outcomes are audited with the identity tied
+to your approver key. There is no field for typing a name.
 
-**Do not approve from an account whose name ends in `_agent`.** The queue rejects it,
-but the reason it rejects it is that approvals must be attributable to a person.
+**Never give an approver key to an agent or put one in an agent's configuration.**
+Agent keys are rejected at this endpoint, and keeping approver keys out of agent
+environments is what keeps that true.
 
 ---
 
@@ -171,7 +174,7 @@ sqlite3 data/itops.db ".backup data/itops-backup.db"
 
 In production the systems of record are the source of truth for users and tickets;
 only the audit log and approval history are unique to the gateway. **Back those up
-independently and treat the audit log as the higher-value artefact** — it is the only
+independently and treat the audit log as the higher-value artefact**: it is the only
 record of what the agents did.
 
 Recovery: redeploy the image, restore the audit database, verify `/ready`, reconnect

@@ -13,7 +13,7 @@ made up its mind.
 
 What we are defending against, in rough order of likelihood.
 
-### T1 — The agent is simply wrong
+### T1: The agent is simply wrong
 Most likely by a wide margin. A model misreads a request and calls the wrong tool
 with plausible-looking arguments. No malice required.
 
@@ -21,23 +21,23 @@ with plausible-looking arguments. No malice required.
 role can reach. A `readonly_agent` being wrong produces a bad answer; it cannot
 produce a bad change.
 
-### T2 — Stored prompt injection
+### T2: Stored prompt injection
 A user files a ticket containing instructions and waits for an agent to read it. This
 is the realistic attack in an ITSM context, because the attacker does not need access
-to the agent at all — only the ability to open a ticket.
+to the agent at all, only the ability to open a ticket.
 
 **Control:** injection markers in free text are neutralised on write, and the event is
 surfaced rather than swallowed. More fundamentally, T1's control applies: even a
 fully hijacked agent is bounded by its role.
 
-### T3 — Confused deputy
+### T3: Confused deputy
 The agent has more authority than the user it is acting for. A user asks for
 something they could not do themselves, and the agent does it because the agent can.
 
 **Control:** privileged actions do not execute. A human sees the request, the
 justification, and the target before anything changes.
 
-### T4 — Injection through tool arguments
+### T4: Injection through tool arguments
 An LLM passes a quote character, a SQL fragment, or a path traversal into a tool
 argument.
 
@@ -45,14 +45,14 @@ argument.
 depth, not the primary defence. There is a test that fires a DROP TABLE through a
 search parameter and asserts the table survives.
 
-### T5 — Privilege escalation via the gateway itself
+### T5: Privilege escalation via the gateway itself
 The gateway holds credentials to identity and ITSM systems. It is a target.
 
 **Control:** the production backend credential is itself narrowly scoped, so the
 gateway cannot exercise capability its token does not carry even if application logic
 is bypassed. Never-exposed actions are absent from the tool registry entirely.
 
-### T6 — Untraceable action
+### T6: Untraceable action
 Something changed and nobody can reconstruct who or what did it.
 
 **Control:** append-only audit of every call, including denials, with redaction.
@@ -108,15 +108,15 @@ was a decision. `GET /roles` serves the list at runtime.
 
 Three independent layers. Each assumes the one above it may fail.
 
-**Layer 1 — Registration.** A denied tool is never advertised. The agent cannot name
+**Layer 1: Registration.** A denied tool is never advertised. The agent cannot name
 what it does not know exists. This is the weakest layer, because a determined caller
 can guess a name; it is here to reduce the surface, not to be relied on.
 
-**Layer 2 — Authorisation.** `authorize()` runs on every invocation regardless of
+**Layer 2: Authorisation.** `authorize()` runs on every invocation regardless of
 what was advertised. Role versus tier, decided server side. This is the primary
 control.
 
-**Layer 3 — Backend scope.** The production credential is scoped so that even a total
+**Layer 3: Backend scope.** The production credential is scoped so that even a total
 compromise of layers 1 and 2 cannot exercise capability the token does not carry. The
 Entra ID stub documents this: `User.Read.All` and `GroupMember.ReadWrite.All`, and
 deliberately not `Directory.ReadWrite.All`.
@@ -152,9 +152,20 @@ but it forces the agent to articulate a reason that a human then reads. In pract
 the justification is the most useful thing in the approval queue.
 
 **The agent cannot approve.** There is no `approve` tool, so no sequence of model
-outputs reaches that path. Approval happens over HTTP by a human. A second check in
-the approval queue rejects approver identities ending in `_agent`, which is belt and
-braces rather than the actual control.
+outputs reaches that path over MCP.
+
+Over HTTP the control is the credential. `POST /approvals/{id}/decide` requires an
+approver key, and approver keys live in a separate namespace from agent keys
+(`src/credentials.py`). The approver's name is taken from the key, so a caller cannot
+type someone else's name into the audit trail. An approver whose identity matches the
+requester is refused. With no approvers configured the endpoint returns 503, so a
+deployment that forgot to set them up fails closed.
+
+On `/call`, the role also comes from the agent's key. A role header is ignored, and a
+missing or unknown key gets `readonly_agent`.
+
+A second check in the approval queue still rejects identities ending in `_agent`.
+That is a second layer, not the control.
 
 ---
 
@@ -171,7 +182,7 @@ an agent is misconfigured or something is probing what it can reach. `GET
 pattern, long opaque strings, SSN-shaped values. Emails are partially masked in
 contexts where correlation matters more than the full address.
 
-**Append only.** No UPDATE or DELETE path exists in the codebase. `modify_audit_log`
+**Append only.** No code path issues UPDATE or DELETE against the audit table. `modify_audit_log`
 is in the never-exposed list.
 
 ---

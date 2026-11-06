@@ -81,7 +81,7 @@ CREATE TABLE kb_articles (
     category    TEXT NOT NULL
 );
 
--- Append-only. No UPDATE or DELETE path exists anywhere in the codebase.
+-- Append-only. No code path issues UPDATE or DELETE against this table.
 CREATE TABLE audit_log (
     entry_id     INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp    TEXT NOT NULL,

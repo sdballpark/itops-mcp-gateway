@@ -110,9 +110,11 @@ generates unlimited READ traffic.
 
 **Durable approval state**, per above.
 
-**Real approver authorisation.** Any non-agent identity can currently approve.
-Production needs group membership checks and, for privileged grants, verification
-against the target's management chain.
+**Real approver authorisation.** Approvers now authenticate with an issued key from a
+namespace agents never hold, and the approver name comes from that key rather than
+from the request. That closes the self-approval path over HTTP. Production would
+replace static keys with Entra ID tokens, check approver group membership, and for
+privileged grants verify the approver against the target's management chain.
 
 **Structured logging to a SIEM.** The audit table is queryable but local. Real
 deployments ship to Splunk or Sentinel, and the denial stream is what you alert on.
