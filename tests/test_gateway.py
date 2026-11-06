@@ -18,17 +18,12 @@ into a liability.
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-from audit import AuditLog  # noqa: E402
-from backends import SQLiteBackend  # noqa: E402
-from gateway import TOOLS, Gateway  # noqa: E402
-from security import (  # noqa: E402
+from itops_mcp_gateway.audit import AuditLog
+from itops_mcp_gateway.backends import SQLiteBackend
+from itops_mcp_gateway.gateway import TOOLS, Gateway
+from itops_mcp_gateway.security import (
     NEVER_EXPOSED,
     Decision,
     Tier,
@@ -40,7 +35,7 @@ from security import (  # noqa: E402
     validate_id,
     validate_limit,
 )
-from seed import seed  # noqa: E402
+from itops_mcp_gateway.seed import seed
 
 
 @pytest.fixture()

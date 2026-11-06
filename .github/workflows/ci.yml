@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Seed demo database
-        run: python src/seed.py
+        run: python -m itops_mcp_gateway.seed
       - name: Run test suite
         run: python -m pytest tests/ -q
 
@@ -40,7 +40,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Seed demo database
-        run: python src/seed.py
+        run: python -m itops_mcp_gateway.seed
       - name: Enforce security invariants
         run: |
           python -m pytest tests/ -q -k "readonly_agent_cannot_write or \
@@ -50,6 +50,8 @@ jobs:
             agent_credential_cannot_approve or \
             role_header_is_ignored or \
             audit_redacts_secrets or \
-            stored_prompt_injection_is_neutralized" -v
+            stored_prompt_injection_is_neutralized or \
+            policy_refuses_tool_that_is_also_never_exposed or \
+            policy_cannot_be_widened_after_construction" -v
       - name: End-to-end demo
         run: python demo.py

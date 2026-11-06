@@ -9,3 +9,5 @@ data/*.db
 
 DEMO_RUNBOOK.md
 data/credentials.json
+*.egg-info/
+build/

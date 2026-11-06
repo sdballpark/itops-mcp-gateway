@@ -17,6 +17,8 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from .audit import APPROVALS_SCHEMA, AUDIT_SCHEMA
+
 SEED = 42
 
 SCHEMA = """
@@ -81,37 +83,8 @@ CREATE TABLE kb_articles (
     category    TEXT NOT NULL
 );
 
--- Append-only. No code path issues UPDATE or DELETE against this table.
-CREATE TABLE audit_log (
-    entry_id     INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp    TEXT NOT NULL,
-    client_id    TEXT NOT NULL,
-    client_role  TEXT NOT NULL,
-    tool_name    TEXT NOT NULL,
-    tier         TEXT NOT NULL,
-    decision     TEXT NOT NULL,
-    reason       TEXT,
-    arguments    TEXT NOT NULL,
-    result_summary TEXT,
-    duration_ms  REAL
-);
-
-CREATE TABLE approvals (
-    approval_id    TEXT PRIMARY KEY,
-    tool_name      TEXT NOT NULL,
-    arguments      TEXT NOT NULL,
-    requested_by   TEXT NOT NULL,
-    requested_at   TEXT NOT NULL,
-    justification  TEXT NOT NULL,
-    status         TEXT NOT NULL,
-    decided_by     TEXT,
-    decided_at     TEXT
-);
-
 CREATE INDEX idx_tickets_status ON tickets(status);
-CREATE INDEX idx_audit_ts ON audit_log(timestamp);
-CREATE INDEX idx_audit_tool ON audit_log(tool_name);
-"""
+""" + AUDIT_SCHEMA + APPROVALS_SCHEMA
 
 FIRST = ["Dana", "Marcus", "Priya", "Elena", "Tom", "Aisha", "Ben", "Carla", "David",
          "Grace", "Hector", "Ingrid", "Jamal", "Karen", "Luis", "Mei", "Noah",
@@ -283,7 +256,7 @@ def seed(db_path: str | Path = "data/itops.db") -> dict[str, int]:
     return counts
 
 
-if __name__ == "__main__":
+def main() -> None:
     ap = argparse.ArgumentParser(description="Seed the demo IT operations database.")
     ap.add_argument("--db", default="data/itops.db")
     args = ap.parse_args()
@@ -294,3 +267,7 @@ if __name__ == "__main__":
     priv = sum(1 for g in GROUPS if g[3])
     print(f"\n  privileged groups: {priv} of {len(GROUPS)}")
     print("  (privileged group membership is the action that requires human approval)")
+
+
+if __name__ == "__main__":
+    main()

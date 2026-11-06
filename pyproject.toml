@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "itops-mcp-gateway"
+version = "1.2.0"
+description = "Tool gateway for AI agents: tiered authorization, human approval and append-only audit, driven by a pluggable policy."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Robert L. Bogan Jr." }]
+requires-python = ">=3.11"
+dependencies = [
+  "mcp>=1.2,<2",
+  "fastapi>=0.110",
+  "uvicorn>=0.29",
+  "pydantic>=2.6",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0", "httpx>=0.27"]
+
+[project.scripts]
+itops-gateway-mcp = "itops_mcp_gateway.mcp_server:run"
+itops-gateway-seed = "itops_mcp_gateway.seed:main"
+itops-gateway-credentials = "itops_mcp_gateway.credentials:main"
+
+[project.urls]
+Repository = "https://github.com/sdballpark/itops-mcp-gateway"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

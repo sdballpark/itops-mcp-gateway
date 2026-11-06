@@ -22,21 +22,18 @@ the most common way a gateway like this fails is someone adding an HTTP admin pa
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 from typing import Any
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+from contextlib import asynccontextmanager
 
-from contextlib import asynccontextmanager  # noqa: E402
+from fastapi import FastAPI, Header, HTTPException
+from pydantic import BaseModel, Field
 
-from fastapi import FastAPI, Header, HTTPException  # noqa: E402
-from pydantic import BaseModel, Field  # noqa: E402
-
-from backends import SQLiteBackend  # noqa: E402
-from credentials import CREDENTIALS_PATH, CredentialStore  # noqa: E402
-from gateway import Gateway  # noqa: E402
-from security import NEVER_EXPOSED, ROLES  # noqa: E402
+from . import __version__
+from .backends import SQLiteBackend
+from .credentials import CREDENTIALS_PATH, CredentialStore
+from .gateway import IT_POLICY, Gateway
 
 DB_PATH = os.environ.get("ITOPS_DB", "data/itops.db")
 
@@ -49,7 +46,7 @@ async def lifespan(_app: "FastAPI"):
     """Open the backend at startup, fail loudly rather than on first request."""
     try:
         if not Path(DB_PATH).exists():
-            raise FileNotFoundError(f"{DB_PATH} not found. Run `python src/seed.py` first.")
+            raise FileNotFoundError(f"{DB_PATH} not found. Run `python -m itops_mcp_gateway.seed` first.")
         _state["gateway"] = Gateway(SQLiteBackend(DB_PATH), DB_PATH)
         _state["credentials"] = CredentialStore.load(
             os.environ.get("ITOPS_CREDENTIALS", CREDENTIALS_PATH))
@@ -65,7 +62,7 @@ async def lifespan(_app: "FastAPI"):
 app = FastAPI(
     lifespan=lifespan,
     title="IT Operations MCP Gateway",
-    version="1.0.0",
+    version=__version__,
     description=(
         "Secure tool gateway between AI agents and IT operations systems. "
         "Four permission tiers, human approval for entitlement changes, "
@@ -127,10 +124,11 @@ def roles() -> dict[str, Any]:
     return {
         "roles": [
             {"name": r.name, "description": r.description, "max_tier": r.max_tier.value}
-            for r in ROLES.values()
+            for r in IT_POLICY.roles.values()
         ],
         "never_exposed": [
-            {"tool": name, "reason": reason} for name, reason in NEVER_EXPOSED.items()
+            {"tool": name, "reason": reason}
+            for name, reason in IT_POLICY.never_exposed.items()
         ],
     }
 
@@ -140,7 +138,7 @@ def list_tools(role: str = "readonly_agent") -> dict[str, Any]:
     """Tools visible to a role. Discovery only, like /roles: choosing a role here
     shows the permission model and grants nothing. /call takes its role from the
     caller's credential."""
-    role = role if role in ROLES else "readonly_agent"
+    role = role if role in IT_POLICY.roles else IT_POLICY.default_role
     tools = gw().list_tools(role)
     return {"role": role, "count": len(tools), "tools": tools}
 
@@ -162,9 +160,9 @@ def call(
     """
     g = gw()
     ident = _state["credentials"].agent(authorization)
-    if ident is None or ident.role not in ROLES:
+    if ident is None or ident.role not in g.policy.roles:
         return g.call_tool(body.tool, body.arguments, client_id="anonymous",
-                           role_name="readonly_agent")
+                           role_name=g.policy.default_role)
     return g.call_tool(body.tool, body.arguments, client_id=ident.client_id,
                        role_name=ident.role)
 

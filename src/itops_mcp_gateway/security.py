@@ -44,7 +44,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, Mapping
 
 
 class Tier(str, Enum):
@@ -136,13 +136,23 @@ class AuthResult:
     reason: str
 
 
-def authorize(role_name: str, tool_name: str, tier: Tier) -> AuthResult:
-    """Server side authorisation. Called on every tool invocation."""
-    if tool_name in NEVER_EXPOSED:
-        return AuthResult(Decision.DENY,
-                          f"'{tool_name}' is never exposed to agents: {NEVER_EXPOSED[tool_name]}")
+def authorize(role_name: str, tool_name: str, tier: Tier,
+              roles: Mapping[str, ClientRole] | None = None,
+              never_exposed: Mapping[str, str] | None = None) -> AuthResult:
+    """Server side authorisation. Called on every tool invocation.
 
-    role = ROLES.get(role_name)
+    roles and never_exposed default to the IT operations set. A Gateway built with
+    a different Policy passes its own, so the same decision logic serves every
+    deployment rather than each one writing its own.
+    """
+    roles = ROLES if roles is None else roles
+    never_exposed = NEVER_EXPOSED if never_exposed is None else never_exposed
+
+    if tool_name in never_exposed:
+        return AuthResult(Decision.DENY,
+                          f"'{tool_name}' is never exposed to agents: {never_exposed[tool_name]}")
+
+    role = roles.get(role_name)
     if role is None:
         return AuthResult(Decision.DENY, f"unknown client role '{role_name}'")
 
@@ -161,7 +171,7 @@ def authorize(role_name: str, tool_name: str, tier: Tier) -> AuthResult:
 
     if tier is Tier.PRIVILEGED:
         return AuthResult(Decision.APPROVAL_REQUIRED,
-                          f"'{tool_name}' changes entitlements and requires human approval")
+                          f"'{tool_name}' is PRIVILEGED and requires human approval")
 
     return AuthResult(Decision.ALLOW, "permitted")
 

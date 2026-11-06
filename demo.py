@@ -11,15 +11,10 @@ being a script that rotted after it was written.
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
-
-from backends import SQLiteBackend  # noqa: E402
-from gateway import Gateway  # noqa: E402
-from seed import seed  # noqa: E402
-from security import NEVER_EXPOSED  # noqa: E402
+from itops_mcp_gateway.backends import SQLiteBackend
+from itops_mcp_gateway.gateway import Gateway
+from itops_mcp_gateway.security import NEVER_EXPOSED
+from itops_mcp_gateway.seed import seed
 
 DB = "data/demo.db"
 

@@ -19,7 +19,7 @@ Only SHA-256 hashes of keys are stored. Comparison uses hmac.compare_digest.
 
 Generate a credentials file for the demo:
 
-    python src/credentials.py
+    python -m itops_mcp_gateway.credentials
 
 The plaintext keys are printed once and not written to disk.
 """
@@ -118,10 +118,14 @@ def generate(path: str | Path = CREDENTIALS_PATH) -> dict[str, str]:
     return plain
 
 
-if __name__ == "__main__":
+def main() -> None:
     out = sys.argv[1] if len(sys.argv) > 1 else CREDENTIALS_PATH
     keys = generate(out)
     print(f"Wrote hashed credentials to {out}. Plaintext keys, shown once:\n")
     for name, key in keys.items():
         print(f"  {name:28s} {key}")
     print("\nSend as:  Authorization: Bearer <key>")
+
+
+if __name__ == "__main__":
+    main()

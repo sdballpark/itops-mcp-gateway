@@ -14,17 +14,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
+COPY pyproject.toml README.md ./
 COPY src/ ./src/
+RUN pip install --no-cache-dir ".[test]"
+
 COPY tests/ ./tests/
 COPY demo.py .
 
 # Seed at build time and run the suite. If a security invariant is broken, the
 # image does not get built. Accuracy of the permission model is treated as a
 # build-breaking property, the same as a compile error.
-RUN python src/seed.py && python -m pytest tests/ -q
+RUN python -m itops_mcp_gateway.seed && python -m pytest tests/ -q
 
 # Runs as a non-root user. The gateway mediates privileged actions; it should not
 # itself hold privilege it does not need.
@@ -37,4 +37,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/ready').status==200 else 1)"
 
-CMD ["uvicorn", "src.api:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "itops_mcp_gateway.api:app", "--host", "0.0.0.0", "--port", "8000"]

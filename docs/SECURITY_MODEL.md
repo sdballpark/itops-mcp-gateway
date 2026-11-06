@@ -156,7 +156,7 @@ outputs reaches that path over MCP.
 
 Over HTTP the control is the credential. `POST /approvals/{id}/decide` requires an
 approver key, and approver keys live in a separate namespace from agent keys
-(`src/credentials.py`). The approver's name is taken from the key, so a caller cannot
+(`itops_mcp_gateway/credentials.py`). The approver's name is taken from the key, so a caller cannot
 type someone else's name into the audit trail. An approver whose identity matches the
 requester is refused. With no approvers configured the endpoint returns 503, so a
 deployment that forgot to set them up fails closed.

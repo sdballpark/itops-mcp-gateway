@@ -20,13 +20,13 @@ sensible default for a permission system.
 
 RUNNING IT
 ----------
-Configure in an MCP client (Claude Desktop, for example) as:
+Configure in an MCP client as:
 
     {
       "mcpServers": {
         "itops-gateway": {
           "command": "python",
-          "args": ["src/mcp_server.py"],
+          "args": ["-m", "itops_mcp_gateway.mcp_server"],
           "env": {
             "MCP_CLIENT_ROLE": "servicedesk_agent",
             "ITOPS_DB": "data/itops.db"
@@ -41,23 +41,20 @@ import asyncio
 import json
 import os
 import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+import mcp.types as types
+from mcp.server import Server
+from mcp.server.stdio import stdio_server
 
-import mcp.types as types  # noqa: E402
-from mcp.server import Server  # noqa: E402
-from mcp.server.stdio import stdio_server  # noqa: E402
-
-from backends import SQLiteBackend  # noqa: E402
-from gateway import Gateway  # noqa: E402
-from security import ROLES  # noqa: E402
+from .backends import SQLiteBackend
+from .gateway import IT_POLICY, Gateway
 
 DB_PATH = os.environ.get("ITOPS_DB", "data/itops.db")
 CLIENT_ID = os.environ.get("MCP_CLIENT_ID", "mcp-client")
 
 _requested_role = os.environ.get("MCP_CLIENT_ROLE", "readonly_agent")
-CLIENT_ROLE = _requested_role if _requested_role in ROLES else "readonly_agent"
+CLIENT_ROLE = (_requested_role if _requested_role in IT_POLICY.roles
+               else IT_POLICY.default_role)
 
 server = Server("itops-gateway")
 _gateway: Gateway | None = None
@@ -119,5 +116,9 @@ async def main() -> None:
         await server.run(read_stream, write_stream, server.create_initialization_options())
 
 
-if __name__ == "__main__":
+def run() -> None:
     asyncio.run(main())
+
+
+if __name__ == "__main__":
+    run()

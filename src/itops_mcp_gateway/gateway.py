@@ -30,13 +30,16 @@ no denial at all.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
-from typing import Any, Callable
+from dataclasses import dataclass, field
+from types import MappingProxyType
+from typing import Any, Callable, Mapping
 
-from audit import ApprovalQueue, AuditLog
-from backends import Backend
-from security import (
+from .audit import ApprovalQueue, AuditLog
+from .security import (
+    DEFAULT_ROLE,
     NEVER_EXPOSED,
+    ROLES,
+    ClientRole,
     Decision,
     Tier,
     ValidationError,
@@ -303,13 +306,104 @@ _register(ToolSpec(
 ))
 
 
+def _validate_itops_ids(arguments: dict[str, Any]) -> None:
+    """Identifier checks for the IT operations tools, run before any handler."""
+    for key, kind in (("user_id", "user_id"), ("group_id", "group_id"),
+                      ("ticket_id", "ticket_id")):
+        if key in arguments and arguments[key] is not None:
+            validate_id(kind, arguments[key])
+
+
+# --------------------------------------------------------------------------
+# Policy
+# --------------------------------------------------------------------------
+
+class PolicyError(ValueError):
+    """A policy that would weaken the permission model is refused at construction."""
+
+
+@dataclass(frozen=True)
+class Policy:
+    """Everything a deployment decides: which tools exist, at what tier, which roles
+    may reach them, and which actions are never exposed.
+
+    The Gateway enforces a Policy; it does not define one. IT_POLICY below is the
+    IT operations set this repository ships with. Another project builds its own
+    Policy with its own tools and roles and gets the same pipeline: authorize,
+    validate, approval gate, execute, audit.
+
+    Construction refuses three mistakes that would quietly weaken the model:
+    a tool that is also on the never-exposed list, a tool registered at DENIED tier
+    (denied means not registered), and a default role that does not exist.
+    """
+    name: str
+    tools: Mapping[str, ToolSpec]
+    roles: Mapping[str, ClientRole]
+    never_exposed: Mapping[str, str] = field(default_factory=dict)
+    default_role: str = DEFAULT_ROLE
+    validate_arguments: Callable[[dict[str, Any]], None] | None = None
+
+    def __post_init__(self) -> None:
+        overlap = set(self.tools) & set(self.never_exposed)
+        if overlap:
+            raise PolicyError(f"tools also listed as never exposed: {sorted(overlap)}")
+        denied = [n for n, t in self.tools.items() if t.tier is Tier.DENIED]
+        if denied:
+            raise PolicyError(f"tools registered at DENIED tier: {denied}. "
+                              "Denied actions belong in never_exposed, not the registry.")
+        mismatched = [n for n, t in self.tools.items() if t.name != n]
+        if mismatched:
+            raise PolicyError(f"registry keys do not match tool names: {mismatched}")
+        if self.default_role not in self.roles:
+            raise PolicyError(f"default_role '{self.default_role}' is not a defined role")
+        # Freeze the mappings so a policy cannot be widened after the gateway is built.
+        object.__setattr__(self, "tools", MappingProxyType(dict(self.tools)))
+        object.__setattr__(self, "roles", MappingProxyType(dict(self.roles)))
+        object.__setattr__(self, "never_exposed", MappingProxyType(dict(self.never_exposed)))
+
+    @classmethod
+    def build(cls, name: str, tools: list[ToolSpec], roles: list[ClientRole],
+              never_exposed: Mapping[str, str] | None = None,
+              default_role: str | None = None,
+              validate_arguments: Callable[[dict[str, Any]], None] | None = None) -> "Policy":
+        """Convenience constructor from lists."""
+        names = [t.name for t in tools]
+        dupes = sorted({n for n in names if names.count(n) > 1})
+        if dupes:
+            raise PolicyError(f"duplicate tool names: {dupes}")
+        return cls(name=name,
+                   tools={t.name: t for t in tools},
+                   roles={r.name: r for r in roles},
+                   never_exposed=dict(never_exposed or {}),
+                   default_role=default_role or roles[0].name,
+                   validate_arguments=validate_arguments)
+
+
+IT_POLICY = Policy(
+    name="itops",
+    tools=TOOLS,
+    roles=ROLES,
+    never_exposed=NEVER_EXPOSED,
+    default_role=DEFAULT_ROLE,
+    validate_arguments=_validate_itops_ids,
+)
+
+
 # --------------------------------------------------------------------------
 # Gateway
 # --------------------------------------------------------------------------
 
 class Gateway:
-    def __init__(self, backend: Backend, db_path: str = "data/itops.db"):
+    """Enforces a Policy. Defaults to the IT operations policy.
+
+    backend is whatever the policy's handlers expect to find at gw.backend; the
+    gateway itself never touches it.
+    """
+
+    def __init__(self, backend: Any, db_path: str = "data/itops.db",
+                 policy: Policy = IT_POLICY):
         self.backend = backend
+        self.policy = policy
         self.audit = AuditLog(db_path)
         self.approvals = ApprovalQueue(db_path)
 
@@ -321,8 +415,8 @@ class Gateway:
         reason to describe a door the caller cannot open.
         """
         out = []
-        for spec in TOOLS.values():
-            auth = authorize(role_name, spec.name, spec.tier)
+        for spec in self.policy.tools.values():
+            auth = self._authorize(role_name, spec.name, spec.tier)
             if auth.decision is Decision.DENY:
                 continue
             out.append({
@@ -343,14 +437,15 @@ class Gateway:
         # Checked before tool resolution so the audit trail records a deliberate
         # denial with its reason, rather than an indistinguishable "unknown tool".
         # If an agent is asking for offboard_user, that is a signal worth seeing.
-        if tool_name in NEVER_EXPOSED:
-            reason = f"'{tool_name}' is never exposed to agents: {NEVER_EXPOSED[tool_name]}"
+        never_exposed = self.policy.never_exposed
+        if tool_name in never_exposed:
+            reason = f"'{tool_name}' is never exposed to agents: {never_exposed[tool_name]}"
             self.audit.record(client_id, role_name, tool_name, Tier.DENIED, Decision.DENY,
                               arguments, reason=reason,
                               duration_ms=(time.perf_counter() - started) * 1000)
             return {"ok": False, "error": "denied", "reason": reason}
 
-        spec = TOOLS.get(tool_name)
+        spec = self.policy.tools.get(tool_name)
 
         # 1. resolve
         if spec is None:
@@ -359,7 +454,7 @@ class Gateway:
             return {"ok": False, "error": f"unknown tool: {tool_name}"}
 
         # 2. authorize
-        auth = authorize(role_name, tool_name, spec.tier)
+        auth = self._authorize(role_name, tool_name, spec.tier)
         if auth.decision is Decision.DENY:
             self.audit.record(client_id, role_name, tool_name, spec.tier, Decision.DENY,
                               arguments, reason=auth.reason,
@@ -368,10 +463,8 @@ class Gateway:
 
         # 3. validate
         try:
-            for key, kind in (("user_id", "user_id"), ("group_id", "group_id"),
-                              ("ticket_id", "ticket_id")):
-                if key in arguments and arguments[key] is not None:
-                    validate_id(kind, arguments[key])
+            if self.policy.validate_arguments is not None:
+                self.policy.validate_arguments(arguments)
         except ValidationError as exc:
             self.audit.record(client_id, role_name, tool_name, spec.tier, Decision.DENY,
                               arguments, reason=f"validation: {exc}",
@@ -437,7 +530,7 @@ class Gateway:
         if args is None:
             return {"ok": False, "error": "pending arguments unavailable; re-request the action"}
 
-        spec = TOOLS.get(rec["tool_name"])
+        spec = self.policy.tools.get(rec["tool_name"])
         if spec is None:
             return {"ok": False, "error": f"unknown tool: {rec['tool_name']}"}
 
@@ -448,6 +541,10 @@ class Gateway:
                           result_summary=_summarize(result))
         return {"ok": True, "approval_id": approval_id, "executed": True,
                 "approved_by": approver, "result": result}
+
+    def _authorize(self, role_name: str, tool_name: str, tier: Tier):
+        return authorize(role_name, tool_name, tier,
+                         roles=self.policy.roles, never_exposed=self.policy.never_exposed)
 
     def close(self) -> None:
         self.audit.close()

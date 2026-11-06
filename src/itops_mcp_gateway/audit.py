@@ -31,7 +31,44 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from security import Decision, Tier, redact
+from .security import Decision, Tier, redact
+
+
+# The gateway owns these two tables. They are created here, not by any seed script,
+# so a Gateway built on a fresh database works on its first call whatever policy it
+# runs. CREATE ... IF NOT EXISTS leaves an existing table and its history untouched.
+AUDIT_SCHEMA = """
+-- Append-only. No code path issues UPDATE or DELETE against this table.
+CREATE TABLE IF NOT EXISTS audit_log (
+    entry_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp    TEXT NOT NULL,
+    client_id    TEXT NOT NULL,
+    client_role  TEXT NOT NULL,
+    tool_name    TEXT NOT NULL,
+    tier         TEXT NOT NULL,
+    decision     TEXT NOT NULL,
+    reason       TEXT,
+    arguments    TEXT NOT NULL,
+    result_summary TEXT,
+    duration_ms  REAL
+);
+CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(timestamp);
+CREATE INDEX IF NOT EXISTS idx_audit_tool ON audit_log(tool_name);
+"""
+
+APPROVALS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS approvals (
+    approval_id    TEXT PRIMARY KEY,
+    tool_name      TEXT NOT NULL,
+    arguments      TEXT NOT NULL,
+    requested_by   TEXT NOT NULL,
+    requested_at   TEXT NOT NULL,
+    justification  TEXT NOT NULL,
+    status         TEXT NOT NULL,
+    decided_by     TEXT,
+    decided_at     TEXT
+);
+"""
 
 
 def _now() -> str:
@@ -44,6 +81,7 @@ class AuditLog:
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        self._conn.executescript(AUDIT_SCHEMA)
 
     def record(
         self,
@@ -117,8 +155,10 @@ class AuditLog:
 class ApprovalQueue:
     def __init__(self, db_path: str | Path = "data/itops.db"):
         self.db_path = str(db_path)
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        self._conn.executescript(APPROVALS_SCHEMA)
 
     def create(self, tool_name: str, arguments: dict[str, Any],
                requested_by: str, justification: str) -> dict[str, Any]:

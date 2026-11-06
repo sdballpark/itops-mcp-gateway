@@ -137,3 +137,32 @@ an enforced invariant.
 
 It demonstrates a security architecture and the reasoning behind it. That is the
 claim, and overstating it would undercut the parts that are real.
+
+---
+
+## Policy as data (v1.2.0)
+
+Up to v1.1.0 the tool registry, roles and never-exposed list were module globals
+written for IT operations. A second project could only reuse the gateway by copying
+it, and a copy is a second implementation of authorization that drifts.
+
+v1.2.0 separates enforcement from policy. `Gateway` enforces a `Policy`; `IT_POLICY`
+is one instance of it. Three decisions shaped the change.
+
+**Validation at construction.** A policy is checked when it is built: no tool may
+also be on the never-exposed list, nothing may be registered at DENIED tier, and the
+default role must exist. Those are the mistakes that weaken a permission model
+without anyone noticing, so they fail loudly at startup instead.
+
+**Read-only once built.** The policy's mappings are frozen. Code that holds a
+reference to a running gateway cannot add a tool or widen a role.
+
+**The gateway owns its tables.** The audit log and approval queue now create their
+own tables. Before, they relied on the IT seed script, so a gateway on a fresh
+database for any other policy failed on its first call. The policy tests caught this.
+
+**MCP SDK pinned below 2.** Version 2 of the MCP Python SDK removed the decorator
+API the MCP server uses, and `mcp>=1.2` let it install. The server failed to start
+on fresh installs and no test noticed, because none exercised the MCP transport. It
+is now tested through the SDK's own request handlers. Porting to the 2.x API is
+tracked separately.

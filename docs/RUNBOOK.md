@@ -37,7 +37,7 @@ Set the role in the MCP client configuration, never in the agent's own context:
   "mcpServers": {
     "itops-gateway": {
       "command": "python",
-      "args": ["src/mcp_server.py"],
+      "args": ["-m", "itops_mcp_gateway.mcp_server"],
       "env": { "MCP_CLIENT_ROLE": "servicedesk_agent" }
     }
   }
@@ -151,11 +151,13 @@ and the approver.
 
 ## Adding a tool
 
-1. Write the handler in `src/gateway.py`.
+1. Write the handler. For the IT tools that is `src/itops_mcp_gateway/gateway.py`;
+   another project writes it in its own code and adds it to its own `Policy`.
 2. Register it with an explicit tier. **Decide the tier first**, before the schema.
 3. If it changes entitlements it is PRIVILEGED. If it is irreversible, has blast
-   radius beyond the requester, or is an attack primitive, it belongs in
-   `NEVER_EXPOSED` with a written reason instead.
+   radius beyond the requester, or is an attack primitive, it belongs in the
+   policy's never-exposed list with a written reason instead. A policy that puts the
+   same name in both places is refused when it is built.
 4. Add a test asserting what the tool must *not* do.
 5. Run `python demo.py` and confirm it still exits zero.
 
